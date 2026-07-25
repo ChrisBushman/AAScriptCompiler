@@ -118,15 +118,28 @@ void LoadEvents(T_void)
     fgets(buffer, 80, fp) ;
     while (!feof(fp))  {
         if (isalpha(buffer[0]))  {
+            unsigned int number ;
+
             if (G_numEvents >= MAX_EVENTS)  {
                 puts("Too many events!") ;
                 exit(6) ;
             }
+            /* %u into a T_word16* (2 bytes) is wrong regardless of
+               platform -- scanf writes a full 4-byte unsigned int, so
+               it always overruns the field by 2 bytes. On little-endian
+               hosts the meaningful bytes happen to land in the field's
+               own first 2 bytes and the overrun is (harmlessly) all
+               zero; on big-endian hosts the meaningful bytes land in
+               the *overrun* 2 bytes instead, leaving the field itself
+               zeroed -- confirmed corrupting every event number on
+               PowerPC. Scan into a real unsigned int, then truncate
+               into the field explicitly. */
             sscanf(
                 buffer,
                 "%s%u",
                 G_events[G_numEvents].name,
-                &G_events[G_numEvents].number) ;
+                &number) ;
+            G_events[G_numEvents].number = (T_word16)number ;
             G_numEvents++ ;
         }
         fgets(buffer, 80, fp) ;
@@ -155,16 +168,26 @@ void LoadCommands(T_void)
     fgets(buffer, 80, fp) ;
     while (!feof(fp))  {
         if (isalpha(buffer[0]))  {
+            unsigned int number ;
+            unsigned int numArgs ;
+
             if (G_numCommands >= MAX_COMMANDS)  {
                 puts("Too many commands!") ;
                 exit(8) ;
             }
+            /* See LoadEvents()'s comment -- same %u/T_word16* mismatch,
+               here silently zeroing numArgs on big-endian hosts, which
+               then makes every non-zero-argument command in every
+               script fail with a bogus "Wrong number of arguments"
+               (confirmed on PowerPC). */
             sscanf(
                 buffer,
                 "%s%u%u",
                 G_commands[G_numCommands].name,
-                &G_commands[G_numCommands].number,
-                &G_commands[G_numCommands].numArgs) ;
+                &number,
+                &numArgs) ;
+            G_commands[G_numCommands].number = (T_word16)number ;
+            G_commands[G_numCommands].numArgs = (T_word16)numArgs ;
             G_numCommands++ ;
         }
         fgets(buffer, 80, fp) ;
@@ -494,6 +517,16 @@ T_void CompileCommand(T_byte8 *p_line)
     T_byte8 *p_open ;
     T_sword16 commandNum ;
 
+    /* sscanf's %s leaves the destination untouched (not even
+       null-terminated) if there's no token to match -- e.g. a
+       whitespace/comment-only line, which is legitimate input here
+       (CompileFile dispatches any line starting with whitespace to this
+       function, comment-only lines included). Without this, `command`
+       is uninitialized stack garbage whenever that happens, read by the
+       strstr/sscanf calls below -- harmless by luck on some platforms'
+       stack layout, and a real "Unknown command" garbage-byte error on
+       others (confirmed on PowerPC). */
+    command[0] = '\0' ;
     sscanf(p_line, "%s", command) ;
 
     p_open = strstr(command, "(") ;
@@ -527,6 +560,7 @@ T_void CompileDefvar(T_byte8 *p_defvar)
     T_sword32 value ;
 
     value = -1 ;
+    var[0] = '\0' ;   /* see CompileCommand's comment on sscanf's %s */
     sscanf(p_defvar+6, "%s%d", var, &value) ;
 
     if ((value < 0) || (value >= 256))  {
@@ -544,6 +578,7 @@ T_void CompileDefnum(T_byte8 *p_defnum)
     T_byte8 var[80] ;
     T_sword32 value ;
 
+    var[0] = '\0' ;   /* see CompileCommand's comment on sscanf's %s */
     sscanf(p_defnum+6, "%s%d", var, &value) ;
 
     AddDefnum(var, value) ;
@@ -645,6 +680,7 @@ T_void CompileInclude(T_byte8 *p_include)
 {
     T_byte8 name[80] ;
 
+    name[0] = '\0' ;   /* see CompileCommand's comment on sscanf's %s */
     sscanf(p_include+8, "%s", name) ;
     CompileFile(name) ;
 }
