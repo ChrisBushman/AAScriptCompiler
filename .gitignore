@@ -6,3 +6,21 @@
 /AAScriptCompiler.opensdf
 /AAScriptCompiler.sdf
 /AAScriptCompiler.suo
+
+# Build outputs. Local CMake builds must use -B out (not -B build) --
+# on case-insensitive filesystems (default macOS APFS), "build" and "Build"
+# (the tracked cross-compile script directory below) are the same path.
+/out/
+/Build/MacOSX-PPC/build/
+/Build/IRIX-O2/build/
+
+# Native binaries built locally for release packaging.
+/dist/
+
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+/build.ninja
+/.ninja_deps
+/.ninja_log
+/compile_commands.json

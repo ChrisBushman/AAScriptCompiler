@@ -1,9 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 //#include <mem.h>
-#include <conio.h>
-#include <malloc.h>
-#include <io.h>
 #include <ctype.h>
 //#include <bios.h>
 #include <string.h>
@@ -16,8 +13,8 @@ typedef char T_sbyte8 ;
 typedef unsigned char T_byte8 ;
 typedef short int T_sword16 ;
 typedef unsigned short int T_word16 ;
-typedef long T_sword32 ;
-typedef unsigned long T_word32 ;
+typedef signed int T_sword32 ;
+typedef unsigned int T_word32 ;
 typedef enum T_byte8 {
     FALSE,
     TRUE,
@@ -98,26 +95,6 @@ typedef T_byte8 E_scriptFlag ;
 #define SCRIPT_FLAG_GREATER_THAN_OR_EQUAL  7
 #define SCRIPT_FLAG_UNKNOWN                8
 
-typedef struct T_scriptHeader_ {
-    T_word16 highestEvent ;            /* Number of events in this script */
-                                       /* that might be handled. */
-    T_word16 highestPlace ;            /* Number of places in this script */
-                                       /* that might be handled. */
-    T_word32 sizeCode ;                /* size of code. */
-    T_word32 reserved[6] ;             /* Reserved for future use. */
-    T_word32 number ;                  /* Script number to identify it. */
-    T_word32 tag ;                     /* Tag to tell its memory state. */
-    struct T_scriptHeader_ *p_next ;          /* Pointer to next script. */
-    struct T_scriptHeader_ *p_prev ;          /* Pointer to previous script. */
-    T_word32 lockCount ;               /* Number of users of this script. */
-                                       /* A lock count of zero means that */
-                                       /* the script is discardable. */
-    T_byte8 *p_code ;                  /* Pointer to code area. */
-    T_word16 *p_events ;               /* Pointer to events list. */
-    T_word16 *p_places ;               /* Pointer to places list. */
-} T_scriptHeader ;
-
-T_scriptHeader G_script ;
 
 T_void CompileInclude(T_byte8 *p_include) ;
 
@@ -126,7 +103,7 @@ void LoadEvents(T_void)
     FILE *fp ;
     char buffer[80] ;
 
-    fp = fopen("events.lst", "r") ;
+    fp = fopen("EVENTS.LST", "r") ;
     if (fp == NULL)  {
         puts("Cannot open EVENTS.LST!\n") ;
         exit(4) ;
@@ -163,7 +140,7 @@ void LoadCommands(T_void)
     FILE *fp ;
     char buffer[80] ;
 
-    fp = fopen("command.lst", "r") ;
+    fp = fopen("COMMAND.LST", "r") ;
     if (fp == NULL)  {
         puts("Cannot open EVENTS.LST!\n") ;
         exit(4) ;
@@ -340,7 +317,15 @@ T_void Strip(T_byte8 *p_text)
     while ((*p_start != '\0') &&
            (isspace(*p_start)))
         p_start++ ;
-    strcpy(p_text, p_start) ;
+    /* memmove, not strcpy -- p_text and p_start point into the same
+       buffer and can overlap (whenever there's leading whitespace to
+       strip), which is undefined behavior for strcpy. Harmless in
+       practice on this tool's original DOS-era Borland build, but
+       modern hardened libc (glibc/Apple libc's _FORTIFY_SOURCE) traps
+       it at runtime -- confirmed crashing (SIGILL, __chk_fail_overlap)
+       on any script with a leading space in an argument, e.g.
+       "Set(DruidLift, NOT_ACTIVATED)" in L1.SRC. */
+    memmove(p_text, p_start, strlen(p_start) + 1) ;
     len = strlen(p_text)-1 ;
     while (len)  {
         if (isspace(p_text[len]))
@@ -374,19 +359,24 @@ T_sword16 FindFlag(T_byte8 *p_name)
 
 T_void OutputNumber(T_sword32 value)
 {
+    /* Explicit little-endian shift/mask, not a pointer-cast byte
+       extraction -- the latter emits host-native byte order, which is
+       wrong (big-endian, backwards) on a big-endian build host (PPC,
+       MIPS/IRIX). The game engine always expects little-endian bytecode
+       regardless of what platform compiled it. */
     if ((value >= -120L) && (value <= 120L))  {
         OutputByte(SCRIPT_DATA_TYPE_8_BIT_NUMBER) ;
-        OutputByte(((T_byte8 *)&value)[0]) ;
+        OutputByte((T_byte8)(value & 0xFF)) ;
     } else if ((value >= -32760L) && (value <= 32760L))  {
         OutputByte(SCRIPT_DATA_TYPE_16_BIT_NUMBER) ;
-        OutputByte(((T_byte8 *)&value)[0]) ;
-        OutputByte(((T_byte8 *)&value)[1]) ;
+        OutputByte((T_byte8)(value & 0xFF)) ;
+        OutputByte((T_byte8)((value >> 8) & 0xFF)) ;
     } else {
         OutputByte(SCRIPT_DATA_TYPE_32_BIT_NUMBER) ;
-        OutputByte(((T_byte8 *)&value)[0]) ;
-        OutputByte(((T_byte8 *)&value)[1]) ;
-        OutputByte(((T_byte8 *)&value)[2]) ;
-        OutputByte(((T_byte8 *)&value)[3]) ;
+        OutputByte((T_byte8)(value & 0xFF)) ;
+        OutputByte((T_byte8)((value >> 8) & 0xFF)) ;
+        OutputByte((T_byte8)((value >> 16) & 0xFF)) ;
+        OutputByte((T_byte8)((value >> 24) & 0xFF)) ;
     }
 }
 
@@ -442,7 +432,7 @@ T_void CompileArgs(T_byte8 *p_args, T_word16 numArgs)
             /* Event. */
             value = atol(arg+1) ;
             if (!((value >= 1) && (value <= 3)))  {
-                printf("Error!  Event parameter (%ld) out of range (1-3) on line %d!\n",
+                printf("Error!  Event parameter (%d) out of range (1-3) on line %d!\n",
                     value,
                     G_line) ;
                 G_errors++ ;
@@ -473,8 +463,10 @@ T_void CompileArgs(T_byte8 *p_args, T_word16 numArgs)
                 if (value != -1)  {
                     value = G_vars[value].number ;
                     OutputByte(SCRIPT_DATA_TYPE_VARIABLE) ;
-                    OutputByte(((T_byte8 *)&value)[0]) ;
-                    OutputByte(((T_byte8 *)&value)[1]) ;
+                    /* Explicit little-endian shift/mask -- see
+                       OutputNumber()'s comment for why. */
+                    OutputByte((T_byte8)(value & 0xFF)) ;
+                    OutputByte((T_byte8)((value >> 8) & 0xFF)) ;
                 } else {
 //printf("Searching for defnum: %s\n", arg) ;
                     value = FindDefnum(arg) ;
@@ -535,10 +527,10 @@ T_void CompileDefvar(T_byte8 *p_defvar)
     T_sword32 value ;
 
     value = -1 ;
-    sscanf(p_defvar+6, "%s%ld", var, &value) ;
+    sscanf(p_defvar+6, "%s%d", var, &value) ;
 
     if ((value < 0) || (value >= 256))  {
-        printf("Defvar value %ld out of range (0-255) on line %d\n",
+        printf("Defvar value %d out of range (0-255) on line %d\n",
             value,
             G_line) ;
         G_errors++ ;
@@ -552,7 +544,7 @@ T_void CompileDefnum(T_byte8 *p_defnum)
     T_byte8 var[80] ;
     T_sword32 value ;
 
-    sscanf(p_defnum+6, "%s%ld", var, &value) ;
+    sscanf(p_defnum+6, "%s%d", var, &value) ;
 
     AddDefnum(var, value) ;
 }
@@ -683,9 +675,26 @@ T_word16 FindHighestPlace(T_void)
     return highest ;
 }
 
+T_void WriteLE16(FILE *fp, T_word16 v)
+{
+    fputc((int)(v & 0xFF), fp) ;
+    fputc((int)((v >> 8) & 0xFF), fp) ;
+}
+
+T_void WriteLE32(FILE *fp, T_word32 v)
+{
+    fputc((int)(v & 0xFF), fp) ;
+    fputc((int)((v >> 8) & 0xFF), fp) ;
+    fputc((int)((v >> 16) & 0xFF), fp) ;
+    fputc((int)((v >> 24) & 0xFF), fp) ;
+}
+
 T_void SaveFile(T_byte8 *p_filename)
 {
     FILE *fp ;
+    T_word16 highestEvent ;
+    T_word16 highestPlace ;
+    T_word16 i ;
 
     fp = fopen(p_filename, "wb") ;
     if (fp == NULL)  {
@@ -693,19 +702,44 @@ T_void SaveFile(T_byte8 *p_filename)
         exit(3) ;
     }
 
-    memset(&G_script, 0, sizeof(G_script)) ;
-    G_script.highestEvent = FindHighestEvent() ;
-    G_script.highestPlace = FindHighestPlace() ;
-    G_script.sizeCode = G_place ;
+    highestEvent = FindHighestEvent() ;
+    highestPlace = FindHighestPlace() ;
 
-    fwrite(&G_script, sizeof(G_script), 1, fp) ;
+    /* The on-disk script header is a fixed 64-byte little-endian layout
+       (T_scriptHeaderDisk32 in the game engine's Source/SCRIPT.C), read
+       back field-by-field. It used to be produced here by fwriting this
+       compiler's own in-memory header struct directly, which embedded
+       live pointer fields whose size varies by host word width (4 bytes
+       on a 32-bit host, 8 on 64-bit) and would silently change the
+       on-disk header's size depending on what machine compiled this
+       tool. All the pointer/state fields are always zero on disk; the
+       engine fills them in itself when a script is loaded into memory. */
+    WriteLE16(fp, highestEvent) ;
+    WriteLE16(fp, highestPlace) ;
+    WriteLE32(fp, (T_word32)G_place) ;   /* sizeCode */
+    for (i = 0 ; i < 6 ; i++)
+        WriteLE32(fp, 0) ;               /* reserved[6] */
+    WriteLE32(fp, 0) ;                   /* number */
+    WriteLE32(fp, 0) ;                   /* tag */
+    WriteLE32(fp, 0) ;                   /* p_next */
+    WriteLE32(fp, 0) ;                   /* p_prev */
+    WriteLE32(fp, 0) ;                   /* lockCount */
+    WriteLE32(fp, 0) ;                   /* p_code */
+    WriteLE32(fp, 0) ;                   /* p_events */
+    WriteLE32(fp, 0) ;                   /* p_places */
+
     fwrite(G_code, G_place, 1, fp) ;
-    fwrite(G_eventPlaces, G_script.highestEvent * 2, 1, fp) ;
-    fwrite(G_places, G_script.highestPlace*2, 1, fp) ;
+    /* G_eventPlaces/G_places are in-memory T_word16 arrays -- like the
+       header, these must go out little-endian regardless of the build
+       host's own byte order, not as a raw host-native array dump. */
+    for (i = 0 ; i < highestEvent ; i++)
+        WriteLE16(fp, G_eventPlaces[i]) ;
+    for (i = 0 ; i < highestPlace ; i++)
+        WriteLE16(fp, G_places[i]) ;
     fclose(fp) ;
 }
 
-T_void main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     puts("\n------- Script Compiler version 0.1 -- LesInk Productions (C) 1996") ;
     if (argc != 3)  {
@@ -721,4 +755,5 @@ T_void main(int argc, char *argv[])
     else
         printf("%d errors.\n", G_errors) ;
     puts("Done.") ;
+    return (G_errors == 0) ? 0 : 1 ;
 }
