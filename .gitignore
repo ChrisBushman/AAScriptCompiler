@@ -13,6 +13,7 @@
 /out/
 /Build/MacOSX-PPC/build/
 /Build/IRIX-O2/build/
+/Build/Win9x/build/
 
 # Native binaries built locally for release packaging.
 /dist/

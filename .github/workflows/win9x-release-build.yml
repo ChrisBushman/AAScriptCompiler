@@ -1,0 +1,38 @@
+name: Windows 9x release build
+
+# One-off/manual cross-compile build, not a permanent CI gate -- there is
+# no Windows 95/98/ME GitHub Actions runner, so this only proves the
+# build stays green. Triggered by hand from the Actions tab or
+# `gh workflow run win9x-release-build.yml`.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install mingw-w64 cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-i686 make zip
+
+      - name: Rebuild mingw-w64-crt at -march=i486 (real-hardware fix)
+        run: Build/Win9x/rebuild-mingw-crt-i486.sh
+
+      - name: Build AAScriptCompiler.exe (Win9x)
+        run: make -C Build/Win9x package
+
+      - name: Package release archive
+        run: |
+          STAGE=AAScriptCompiler-Win9x
+          mkdir -p "$STAGE"
+          cp Build/Win9x/build/package/* "$STAGE/"
+          zip -rq AAScriptCompiler-Win9x.zip "$STAGE"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AAScriptCompiler-Win9x
+          path: AAScriptCompiler-Win9x.zip
+          if-no-files-found: error
