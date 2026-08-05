@@ -51,5 +51,5 @@ jobs:
           unzip -q "$asset"
           cp "Release/AAScriptCompiler.exe" "AAScriptCompiler-Windows/AAScriptCompiler.exe"
           rm -f "$asset"
-          zip -rqy "$asset" "AAScriptCompiler-Windows"
+          7z a -tzip "$asset" "AAScriptCompiler-Windows" >/dev/null
           gh release upload "${{ inputs.tag }}" "$asset" --clobber
