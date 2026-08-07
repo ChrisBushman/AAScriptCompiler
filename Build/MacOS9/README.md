@@ -14,22 +14,7 @@ SIOUX console.
 
 | File | Purpose |
 |------|---------|
-| `AAScriptCompiler.mcp` | CodeWarrior 8 project, based on the "Mac OS Classic / Std C Console" stationery (MSL C + SIOUX + InterfaceLib/MathLib). Its access paths are machine-local — retarget the repo root (where `SC.C` lives) and this folder when you open it. Two targets: `Std C Console Debug` and `Std C Console Final`. |
-| `sc_os9.c` | The single compile unit the project builds — a one-line wrapper: `#include "SC.C"`. See below. |
-
-## Why the `sc_os9.c` wrapper
-
-The canonical source is `SC.C` (uppercase `.C`). CodeWarrior's default file
-mappings send lowercase `.c` to the C compiler but leave an uppercase `.C`
-**unmapped**, so it is never compiled (you get a `Sources: 0 code` /
-`undefined 'main'` link error); meanwhile gcc/clang treat `.C` as **C++**,
-where `SC.C`'s `unsigned char*`/`char*` string mixing is an error.
-
-Rather than add a project-wide `.C`→C file mapping, `sc_os9.c` (a real
-lowercase `.c` file, so CW maps it to the C compiler) simply pulls `SC.C` in as
-one translation unit. `SC.C` is found via the project's access path to the repo
-root. Add **only** `sc_os9.c` to the project; `SC.C` stays on disk and is
-`#include`d, not added.
+| `AAScriptCompiler.mcp` | CodeWarrior 8 project, based on the "Mac OS Classic / Std C Console" stationery (MSL C + SIOUX + InterfaceLib/MathLib). It compiles **`SC.C`** (at the repo root) directly — the stationery's `.C` mapping compiles it as C, no wrapper or mapping change needed. Its access paths are machine-local — retarget the repo root (where `SC.C` lives) and this folder when you open it. Two targets: `Std C Console Debug` and `Std C Console Final`. |
 
 ## Classic-Mac source fixes (all in `SC.C`, guarded — no other platform affected)
 
