@@ -1,9 +1,22 @@
 #include <stdio.h>
 #include <stdlib.h>
-//#include <mem.h>
+/* #include <mem.h> */
 #include <ctype.h>
-//#include <bios.h>
+/* #include <bios.h> */
 #include <string.h>
+#if defined(macintosh)
+#include <console.h>   /* ccommand() -- classic-Mac SIOUX arg dialog */
+#endif
+#if defined(__MWERKS__)
+/* CodeWarrior's C compiler is strict about mixing char* and unsigned
+   char* pointers; SC uses T_byte8 (unsigned char) string buffers with
+   the standard <string.h>/scanf char* APIs. mpwc_relax restores the
+   lenient MPW-C pointer behavior the reference gcc/IRIX builds already
+   have. require_prototypes off silences the forward-declaration warnings
+   for this single-file program. */
+#pragma mpwc_relax on
+#pragma require_prototypes off
+#endif
 
 #define QUOTE_START    0xFF
 #define QUOTE_END      0xFE
@@ -103,7 +116,7 @@ void LoadEvents(T_void)
     FILE *fp ;
     char buffer[80] ;
 
-    fp = fopen("EVENTS.LST", "r") ;
+    fp = fopen("EVENTS.LST", "rb") ;   /* "rb": classic Mac must not translate line endings */
     if (fp == NULL)  {
         puts("Cannot open EVENTS.LST!\n") ;
         exit(4) ;
@@ -153,7 +166,7 @@ void LoadCommands(T_void)
     FILE *fp ;
     char buffer[80] ;
 
-    fp = fopen("COMMAND.LST", "r") ;
+    fp = fopen("COMMAND.LST", "rb") ;   /* "rb": classic Mac must not translate line endings */
     if (fp == NULL)  {
         puts("Cannot open EVENTS.LST!\n") ;
         exit(4) ;
@@ -259,7 +272,7 @@ T_void AddDefnum(T_byte8 *p_name, T_sword32 number)
         exit(100) ;
     }
 
-//printf("Defining number: %s %ld\n", p_name, number) ;
+/* printf("Defining number: %s %ld\n", p_name, number) ; */
     strcpy(G_defnums[G_numDefnums].name, p_name) ;
     G_defnums[G_numDefnums].number = (T_word16)number ;
     G_numDefnums++ ;
@@ -444,7 +457,7 @@ T_void CompileArgs(T_byte8 *p_args, T_word16 numArgs)
     }
 
     for (i=0; i<numArgs; i++)  {
-//printf("arg[%d] = '%s'\n", i, args[i]) ;
+/* printf("arg[%d] = '%s'\n", i, args[i]) ; */
         strcpy(arg, args[i]) ;
         Strip(arg) ;
         if ((arg[0] == '-') || (isdigit(arg[0])))  {
@@ -491,11 +504,11 @@ T_void CompileArgs(T_byte8 *p_args, T_word16 numArgs)
                     OutputByte((T_byte8)(value & 0xFF)) ;
                     OutputByte((T_byte8)((value >> 8) & 0xFF)) ;
                 } else {
-//printf("Searching for defnum: %s\n", arg) ;
+/* printf("Searching for defnum: %s\n", arg) ; */
                     value = FindDefnum(arg) ;
                     if (value != -1)  {
                         value = G_defnums[value].number ;
-//printf("Output defnum: %s %ld\n", arg, value) ;
+/* printf("Output defnum: %s %ld\n", arg, value) ; */
                         OutputNumber(value) ;
                     } else {
                         printf("Error!  Unknown argument '%s' on line %d\n",
@@ -541,7 +554,7 @@ T_void CompileCommand(T_byte8 *p_line)
         printf("Error!  Unknown command '%s' on line %d\n", command2, G_line) ;
         exit(201) ;
     }
-//    printf("command: <%s> = %d\n", command2, commandNum) ;
+/*    printf("command: <%s> = %d\n", command2, commandNum) ; */
     OutputByte((T_byte8)commandNum) ;
 
     p_open = strstr(p_line, "(") ;
@@ -616,7 +629,7 @@ T_void CompileFile(T_byte8 *p_filename)
 
     printf("Compiling %s:\n", p_filename) ;
 
-    fp = fopen(p_filename, "r") ;
+    fp = fopen(p_filename, "rb") ;   /* "rb": classic Mac must not translate line endings */
     if (fp == NULL)  {
         printf("Cannot open file %s\n", p_filename) ;
         exit(2) ;
@@ -777,6 +790,11 @@ T_void SaveFile(T_byte8 *p_filename)
 
 int main(int argc, char *argv[])
 {
+#if defined(macintosh)
+    /* Classic Mac SIOUX has no shell to hand us argv -- pop the standard
+       console dialog so the user can type "<script file> <output file>". */
+    argc = ccommand(&argv) ;
+#endif
     puts("\n------- Script Compiler version 0.1 -- LesInk Productions (C) 1996") ;
     if (argc != 3)  {
         printf("USAGE:  SC <script file> <output file>\n") ;
